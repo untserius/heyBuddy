@@ -3,7 +3,8 @@ import {
   ElementRef,
   ViewChild,
   AfterViewInit,
-  OnInit
+  OnInit,
+  OnDestroy
 } from '@angular/core';
 import { ActivatedRoute } from '@angular/router';
 import { SignallingService } from 'src/app/services/signalling.service';
@@ -13,15 +14,23 @@ import { WebRtcService } from 'src/app/services/webrtc.service';
   selector: 'app-call',
   templateUrl: './call.component.html'
 })
-export class CallComponent implements OnInit, AfterViewInit {
+export class CallComponent implements OnInit, AfterViewInit, OnDestroy {
 
   @ViewChild('localVideo') localVideo!: ElementRef<HTMLVideoElement>;
   @ViewChild('remoteVideo') remoteVideo!: ElementRef<HTMLVideoElement>;
 
   role!: string;
   other!: string;
-  viewReady = false;
-  mediaReady = false;
+
+  // Control states
+  isMuted = false;
+  isCameraOff = false;
+  isScreenSharing = false;
+
+  // Media references
+  private cameraStream!: MediaStream;
+  private cameraTrack!: MediaStreamTrack;
+  private currentVideoTrack!: MediaStreamTrack;
 
   constructor(
     private route: ActivatedRoute,
@@ -35,7 +44,7 @@ export class CallComponent implements OnInit, AfterViewInit {
     this.role = this.route.snapshot.paramMap.get('role')!;
     this.other = this.role === 'A' ? 'B' : 'A';
 
-    // Init WebRTC first
+    // Initialize WebRTC
     this.webRtc.init(
       stream => {
         console.log('Remote track received');
@@ -96,9 +105,23 @@ export class CallComponent implements OnInit, AfterViewInit {
   async ngAfterViewInit() {
     console.log('View initialized');
 
-    await this.webRtc.addLocalStream(this.localVideo.nativeElement);
+    // Get camera + mic once
+    this.cameraStream = await navigator.mediaDevices.getUserMedia({
+      video: true,
+      audio: true
+    });
 
-    // Only connect signaling AFTER media is ready
+    this.localVideo.nativeElement.srcObject = this.cameraStream;
+
+    this.cameraTrack = this.cameraStream.getVideoTracks()[0];
+    this.currentVideoTrack = this.cameraTrack;
+
+    // Add tracks to peer connection
+    this.cameraStream.getTracks().forEach(track =>
+      this.webRtc.pc.addTrack(track, this.cameraStream)
+    );
+
+    // Connect signaling AFTER media ready
     this.signalling.connect(this.role);
 
     this.signalling.connected$.subscribe(() => {
@@ -109,5 +132,77 @@ export class CallComponent implements OnInit, AfterViewInit {
         from: this.role
       });
     });
+  }
+
+  // 🎤 Mute / Unmute
+  toggleMute() {
+    const sender = this.webRtc.pc.getSenders()
+      .find(s => s.track?.kind === 'audio');
+
+    if (sender?.track) {
+      sender.track.enabled = !sender.track.enabled;
+      this.isMuted = !sender.track.enabled;
+    }
+  }
+
+  // 🎥 Camera On / Off
+  toggleCamera() {
+    if (this.isScreenSharing) {
+      console.warn('Cannot toggle camera while screen sharing');
+      return;
+    }
+
+    this.cameraTrack.enabled = !this.cameraTrack.enabled;
+    this.isCameraOff = !this.cameraTrack.enabled;
+  }
+
+  // 🖥 Screen Share
+  async toggleScreenShare() {
+    const sender = this.webRtc.pc.getSenders()
+      .find(s => s.track?.kind === 'video');
+
+    if (!sender) return;
+
+    if (!this.isScreenSharing) {
+      const screenStream = await (navigator.mediaDevices as any).getDisplayMedia({
+        video: true
+      });
+
+      const screenTrack = screenStream.getVideoTracks()[0];
+
+      await sender.replaceTrack(screenTrack);
+      this.currentVideoTrack = screenTrack;
+
+      // Update local preview
+      this.localVideo.nativeElement.srcObject = screenStream;
+
+      screenTrack.onended = () => {
+        this.stopScreenShare();
+      };
+
+      this.isScreenSharing = true;
+
+    } else {
+      this.stopScreenShare();
+    }
+  }
+
+  async stopScreenShare() {
+    const sender = this.webRtc.pc.getSenders()
+      .find(s => s.track?.kind === 'video');
+
+    if (!sender) return;
+
+    await sender.replaceTrack(this.cameraTrack);
+    this.currentVideoTrack = this.cameraTrack;
+
+    this.localVideo.nativeElement.srcObject = this.cameraStream;
+
+    this.isScreenSharing = false;
+  }
+
+  ngOnDestroy() {
+    this.cameraStream?.getTracks().forEach(t => t.stop());
+    this.webRtc.pc?.close();
   }
 }

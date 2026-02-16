@@ -1,0 +1,151 @@
+body {
+  margin: 0;
+  background: #0f172a;
+}
+
+/* ===== Container ===== */
+.call-container {
+  position: fixed;
+  inset: 0;
+  background: #0f172a;
+  overflow: hidden;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+}
+
+/* ===== Remote Video (Full Screen) ===== */
+#remoteVideo {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  z-index: 1;
+}
+
+/* ===== Local Preview ===== */
+.local-preview {
+  position: absolute;
+  bottom: 120px;
+  right: 30px;
+  width: 240px;
+  height: 170px;
+  border-radius: 14px;
+  border: 3px solid rgba(255,255,255,0.3);
+  box-shadow: 0 20px 40px rgba(0,0,0,0.7);
+  overflow: hidden;
+  transition: transform 0.2s ease;
+  z-index: 100;
+  object-fit: cover;
+  background: #000;
+}
+
+.local-preview:hover {
+  transform: scale(1.05);
+  border-color: rgba(255,255,255,0.5);
+}
+
+/* ===== Control Bar ===== */
+.controls {
+  position: fixed;
+  bottom: 30px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 16px;
+  padding: 16px 32px;
+  border-radius: 50px;
+  backdrop-filter: blur(20px);
+  background: rgba(15, 23, 42, 0.85);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 0 10px 40px rgba(0,0,0,0.8);
+  z-index: 1000;
+}
+
+/* ===== Buttons ===== */
+.controls button {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  border: none;
+  cursor: pointer;
+  font-size: 24px;
+  color: white;
+  background: #334155;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  position: relative;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+}
+
+.controls button:hover {
+  transform: scale(1.15);
+  background: #475569;
+  box-shadow: 0 6px 20px rgba(0,0,0,0.4);
+}
+
+.controls button:active {
+  transform: scale(1.05);
+}
+
+/* ===== Danger State (Mute / Camera Off) ===== */
+.controls button.active-danger {
+  background: #ef4444;
+  animation: pulse 2s infinite;
+}
+
+.controls button.active-danger:hover {
+  background: #dc2626;
+}
+
+/* ===== Share Active State ===== */
+.controls button.active-primary {
+  background: #3b82f6;
+  animation: pulse-blue 2s infinite;
+}
+
+.controls button.active-primary:hover {
+  background: #2563eb;
+}
+
+/* ===== Animations ===== */
+@keyframes pulse {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7);
+  }
+  50% {
+    box-shadow: 0 0 0 10px rgba(239, 68, 68, 0);
+  }
+}
+
+@keyframes pulse-blue {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.7);
+  }
+  50% {
+    box-shadow: 0 0 0 10px rgba(59, 130, 246, 0);
+  }
+}
+
+/* ===== Responsive ===== */
+@media (max-width: 768px) {
+  .local-preview {
+    width: 140px;
+    height: 100px;
+    bottom: 100px;
+    right: 20px;
+  }
+  
+  .controls {
+    gap: 12px;
+    padding: 12px 24px;
+  }
+  
+  .controls button {
+    width: 48px;
+    height: 48px;
+    font-size: 20px;
+  }
+}

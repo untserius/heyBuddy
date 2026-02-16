@@ -1,4 +1,45 @@
-<h2>Video Call (Role {{ role }})</h2>
+<div class="call-container">
 
-<video #localVideo autoplay muted playsinline></video>
-<video #remoteVideo autoplay playsinline></video>
+  <!-- Remote Fullscreen -->
+  <video 
+    #remoteVideo 
+    id="remoteVideo"
+    autoplay 
+    playsinline>
+  </video>
+
+  <!-- Local Floating Preview -->
+  <video 
+    #localVideo 
+    autoplay 
+    muted 
+    playsinline 
+    class="local-preview">
+  </video>
+
+  <!-- Controls -->
+  <div class="controls">
+
+    <button
+      (click)="toggleMute()"
+      [class.active-danger]="isMuted"
+      title="{{ isMuted ? 'Unmute' : 'Mute' }}">
+      {{ isMuted ? '🔇' : '🎤' }}
+    </button>
+
+    <button
+      (click)="toggleCamera()"
+      [class.active-danger]="isCameraOff"
+      title="{{ isCameraOff ? 'Turn Camera On' : 'Turn Camera Off' }}">
+      {{ isCameraOff ? '📷' : '🎥' }}
+    </button>
+
+    <button
+      (click)="toggleScreenShare()"
+      [class.active-primary]="isScreenSharing"
+      title="{{ isScreenSharing ? 'Stop Sharing' : 'Share Screen' }}">
+      {{ isScreenSharing ? '⏹️' : '🖥️' }}
+    </button>
+
+  </div>
+</div>
