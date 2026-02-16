@@ -11,17 +11,30 @@ init(
   onTrack: (stream: MediaStream) => void,
   onIce: (candidate: RTCIceCandidate) => void
 ) {
-  this.pc = new RTCPeerConnection({
-    iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
-  });
+this.pc = new RTCPeerConnection({
+  iceTransportPolicy: 'relay',
+  iceServers: [
+    {
+      urls: 'stun:stun.l.google.com:19302'
+    },
+    {
+      urls: 'turn:192.168.123.64:3478',
+      username: 'testuser',
+      credential: 'testpass'
+    }
+  ]
+});
 
   // Force ICE
   this.pc.createDataChannel('debug');
+const remoteStream = new MediaStream();
 
-    this.pc.ontrack = e => {
-      console.log('Remote track received');
-      onTrack(e.streams[0]);
-    };
+this.pc.ontrack = (event) => {
+  console.log('Remote track received');
+
+  remoteStream.addTrack(event.track);
+  onTrack(remoteStream);
+};
 
   this.pc.onicecandidate = e => {
     if (e.candidate) {

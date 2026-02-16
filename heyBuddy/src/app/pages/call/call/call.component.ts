@@ -20,6 +20,8 @@ export class CallComponent implements OnInit, AfterViewInit {
 
   role!: string;
   other!: string;
+  viewReady = false;
+  mediaReady = false;
 
   constructor(
     private route: ActivatedRoute,
@@ -33,49 +35,31 @@ export class CallComponent implements OnInit, AfterViewInit {
     this.role = this.route.snapshot.paramMap.get('role')!;
     this.other = this.role === 'A' ? 'B' : 'A';
 
-    // 1️⃣ Connect WebSocket
-    this.signalling.connect(this.role);
+    // Init WebRTC first
+    this.webRtc.init(
+      stream => {
+        console.log('Remote track received');
 
-    // 2️⃣ Send JOIN only AFTER WS is open
-    this.signalling.connected$.subscribe(() => {
-      console.log('WS open, sending JOIN');
-      this.signalling.send({
-        type: 'JOIN',
-        callId: 'call1',
-        from: this.role
-      });
-    });
+        const video = this.remoteVideo.nativeElement;
+        video.srcObject = stream;
+        video.muted = true;
+        video.playsInline = true;
+        video.play().catch(() => {});
+      },
+      candidate => {
+        this.signalling.send({
+          type: 'ICE',
+          callId: 'call1',
+          from: this.role,
+          to: this.other,
+          payload: candidate
+        });
+      }
+    );
 
-    // 3️⃣ Init WebRTC (remote stream handler)
-this.webRtc.init(
-  stream => {
-    console.log('Remote track received');
-
-    const video = this.remoteVideo.nativeElement;
-    video.srcObject = stream;
-
-    // 🔑 CRITICAL FIX
-    video.muted = true;       // allow autoplay
-    video.playsInline = true;
-
-    video.play().catch(err => {
-      console.warn('Autoplay blocked, waiting for user gesture', err);
-    });
-  },
-  candidate => {
-    this.signalling.send({
-      type: 'ICE',
-      callId: 'call1',
-      from: this.role,
-      to: this.other,
-      payload: candidate
-    });
-  }
-);
-
-    // 4️⃣ Handle signaling messages
+    // Handle signaling
     this.signalling.message$.subscribe(async msg => {
-        console.log('SIGNAL RECEIVED:', msg);
+      console.log('SIGNAL RECEIVED:', msg);
 
       if (msg.type === 'READY' && this.role === 'A') {
         const offer = await this.webRtc.createOffer();
@@ -110,7 +94,20 @@ this.webRtc.init(
   }
 
   async ngAfterViewInit() {
-    console.log('View initialized, adding local stream');
+    console.log('View initialized');
+
     await this.webRtc.addLocalStream(this.localVideo.nativeElement);
+
+    // Only connect signaling AFTER media is ready
+    this.signalling.connect(this.role);
+
+    this.signalling.connected$.subscribe(() => {
+      console.log('WS open, sending JOIN');
+      this.signalling.send({
+        type: 'JOIN',
+        callId: 'call1',
+        from: this.role
+      });
+    });
   }
 }

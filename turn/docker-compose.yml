@@ -1,0 +1,19 @@
+version: "3"
+
+services:
+  coturn:
+    image: coturn/coturn
+    container_name: coturn
+    ports:
+      - "3478:3478"
+      - "3478:3478/udp"
+      - "5349:5349"
+      - "5349:5349/udp"
+    command: >
+      -n
+      --log-file=stdout
+      --lt-cred-mech
+      --fingerprint
+      --realm=yourdomain.com
+      --user=testuser:testpass
+      --external-ip=192.168.123.64
