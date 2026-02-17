@@ -16,4 +16,4 @@ services:
       --fingerprint
       --realm=yourdomain.com
       --user=testuser:testpass
-      --external-ip=192.168.123.64
+      --external-ip=192.168.123.199

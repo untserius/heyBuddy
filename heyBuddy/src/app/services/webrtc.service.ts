@@ -3,78 +3,76 @@ import { Injectable } from "@angular/core";
 @Injectable({ providedIn: 'root'})
 export class WebRtcService {
 
-    pc!: RTCPeerConnection;
-    remoteDescSet = false;
-    pendingCandidates: RTCIceCandidate[] = [];
+  pc!: RTCPeerConnection;
+  remoteDescSet = false;
+  pendingCandidates: RTCIceCandidate[] = [];
 
-init(
-  onTrack: (stream: MediaStream) => void,
-  onIce: (candidate: RTCIceCandidate) => void
-) {
-this.pc = new RTCPeerConnection({
-  iceTransportPolicy: 'relay',
-  iceServers: [
-    {
-      urls: 'stun:stun.l.google.com:19302'
-    },
-    {
-      urls: 'turn:192.168.123.64:3478',
-      username: 'testuser',
-      credential: 'testpass'
+  private remoteStream = new MediaStream();
+
+  init(
+    onTrack: (stream: MediaStream) => void,
+    onIce: (candidate: RTCIceCandidate) => void
+  ) {
+
+    // If an old connection exists, close it
+    if (this.pc) {
+      this.pc.close();
     }
-  ]
-});
 
-  // Force ICE
-  this.pc.createDataChannel('debug');
-const remoteStream = new MediaStream();
+    this.remoteDescSet = false;
+    this.pendingCandidates = [];
+    this.remoteStream = new MediaStream();
 
-this.pc.ontrack = (event) => {
-  console.log('Remote track received');
+    this.pc = new RTCPeerConnection({
+      iceTransportPolicy: 'relay',
+      iceServers: [
+        { urls: 'stun:stun.l.google.com:19302' },
+        {
+          urls: 'turn:192.168.123.199:3478',
+          username: 'testuser',
+          credential: 'testpass'
+        }
+      ]
+    });
 
-  remoteStream.addTrack(event.track);
-  onTrack(remoteStream);
-};
+    // Force ICE gathering
+    this.pc.createDataChannel('debug');
 
-  this.pc.onicecandidate = e => {
-    if (e.candidate) {
-      console.log('ICE generated');
-      onIce(e.candidate);
-    }
-  };
+    this.pc.ontrack = (event) => {
+      console.log('Remote track received');
+      this.remoteStream.addTrack(event.track);
+      onTrack(this.remoteStream);
+    };
 
-      this.pc.oniceconnectionstatechange = () => {
+    this.pc.onicecandidate = (e) => {
+      if (e.candidate) {
+        console.log('ICE generated');
+        onIce(e.candidate);
+      }
+    };
+
+    this.pc.oniceconnectionstatechange = () => {
       console.log('ICE state:', this.pc.iceConnectionState);
     };
 
-        this.pc.onconnectionstatechange = () => {
+    this.pc.onconnectionstatechange = () => {
       console.log('PC state:', this.pc.connectionState);
     };
-}
+  }
 
-    async addLocalStream(video: HTMLVideoElement) {
-        const stream = await navigator.mediaDevices.getUserMedia({
-            video: true,
-            audio: true
-        });
-        video.srcObject = stream;
-        stream.getTracks().forEach(t => this.pc.addTrack(t, stream));
-    }
-
-    async createOffer() {
-        const offer = await this.pc.createOffer();
-        await this.pc.setLocalDescription(offer);
-        return { type: offer.type, sdp: offer.sdp };
-    }
-
+  async createOffer() {
+    const offer = await this.pc.createOffer();
+    await this.pc.setLocalDescription(offer);
+    return { type: offer.type, sdp: offer.sdp };
+  }
 
   async handleOffer(offer: any) {
     await this.pc.setRemoteDescription(
       new RTCSessionDescription(offer)
     );
+
     this.remoteDescSet = true;
 
-    // Apply buffered ICE
     for (const c of this.pendingCandidates) {
       await this.pc.addIceCandidate(c);
     }
@@ -90,14 +88,15 @@ this.pc.ontrack = (event) => {
     await this.pc.setRemoteDescription(
       new RTCSessionDescription(answer)
     );
+
     this.remoteDescSet = true;
 
-    // Apply buffered ICE
     for (const c of this.pendingCandidates) {
       await this.pc.addIceCandidate(c);
     }
     this.pendingCandidates = [];
   }
+
   addIceCandidate(candidate: any) {
     const ice = new RTCIceCandidate(candidate);
 
@@ -106,5 +105,18 @@ this.pc.ontrack = (event) => {
     } else {
       this.pendingCandidates.push(ice);
     }
+  }
+
+  closeConnection() {
+    console.log('Closing peer connection');
+
+    if (this.pc) {
+      this.pc.getSenders().forEach(s => s.track?.stop());
+      this.pc.close();
+    }
+
+    this.remoteDescSet = false;
+    this.pendingCandidates = [];
+    this.remoteStream = new MediaStream();
   }
 }

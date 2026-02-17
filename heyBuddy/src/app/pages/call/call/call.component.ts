@@ -4,9 +4,11 @@ import {
   ViewChild,
   AfterViewInit,
   OnInit,
-  OnDestroy
+  OnDestroy,
+  NgZone
 } from '@angular/core';
 import { ActivatedRoute } from '@angular/router';
+import { Subscription } from 'rxjs';
 import { SignallingService } from 'src/app/services/signalling.service';
 import { WebRtcService } from 'src/app/services/webrtc.service';
 
@@ -22,33 +24,41 @@ export class CallComponent implements OnInit, AfterViewInit, OnDestroy {
   role!: string;
   other!: string;
 
-  // Control states
+  callState: 'IDLE' | 'CONNECTING' | 'CONNECTED' | 'ENDED' = 'IDLE';
+
+  stats = {
+  candidateType: '',
+  rtt: 0,
+  outgoingBitrate: 0,
+  incomingBitrate: 0
+};
+
+private statsInterval!: any;
+
   isMuted = false;
   isCameraOff = false;
   isScreenSharing = false;
 
-  // Media references
   private cameraStream!: MediaStream;
   private cameraTrack!: MediaStreamTrack;
   private currentVideoTrack!: MediaStreamTrack;
 
+  private signalingSub!: Subscription;
+  private connectedSub!: Subscription;
+
   constructor(
     private route: ActivatedRoute,
     private signalling: SignallingService,
-    private webRtc: WebRtcService
+    public webRtc: WebRtcService,
+    private zone: NgZone
   ) {}
 
   ngOnInit() {
-    console.log('CallComponent initialized');
-
     this.role = this.route.snapshot.paramMap.get('role')!;
     this.other = this.role === 'A' ? 'B' : 'A';
 
-    // Initialize WebRTC
     this.webRtc.init(
       stream => {
-        console.log('Remote track received');
-
         const video = this.remoteVideo.nativeElement;
         video.srcObject = stream;
         video.muted = true;
@@ -66,9 +76,26 @@ export class CallComponent implements OnInit, AfterViewInit, OnDestroy {
       }
     );
 
-    // Handle signaling
-    this.signalling.message$.subscribe(async msg => {
-      console.log('SIGNAL RECEIVED:', msg);
+    // Track connection state
+    this.webRtc.pc.onconnectionstatechange = () => {
+      const state = this.webRtc.pc.connectionState;
+
+      if (state === 'connecting') {
+        this.callState = 'CONNECTING';
+      }
+
+      if (state === 'connected') {
+        this.callState = 'CONNECTED';
+        this.startStatsMonitoring();
+      }
+
+      if (state === 'disconnected' || state === 'failed' || state === 'closed') {
+        this.callState = 'ENDED';
+      }
+    };
+
+    // Signaling messages
+    this.signalingSub = this.signalling.message$.subscribe(async msg => {
 
       if (msg.type === 'READY' && this.role === 'A') {
         const offer = await this.webRtc.createOffer();
@@ -99,13 +126,15 @@ export class CallComponent implements OnInit, AfterViewInit, OnDestroy {
       if (msg.type === 'ICE') {
         this.webRtc.addIceCandidate(msg.payload);
       }
+
+      if (msg.type === 'LEAVE') {
+        this.handleRemoteLeave();
+      }
     });
   }
 
   async ngAfterViewInit() {
-    console.log('View initialized');
 
-    // Get camera + mic once
     this.cameraStream = await navigator.mediaDevices.getUserMedia({
       video: true,
       audio: true
@@ -116,16 +145,13 @@ export class CallComponent implements OnInit, AfterViewInit, OnDestroy {
     this.cameraTrack = this.cameraStream.getVideoTracks()[0];
     this.currentVideoTrack = this.cameraTrack;
 
-    // Add tracks to peer connection
     this.cameraStream.getTracks().forEach(track =>
       this.webRtc.pc.addTrack(track, this.cameraStream)
     );
 
-    // Connect signaling AFTER media ready
     this.signalling.connect(this.role);
 
-    this.signalling.connected$.subscribe(() => {
-      console.log('WS open, sending JOIN');
+    this.connectedSub = this.signalling.connected$.subscribe(() => {
       this.signalling.send({
         type: 'JOIN',
         callId: 'call1',
@@ -134,7 +160,35 @@ export class CallComponent implements OnInit, AfterViewInit, OnDestroy {
     });
   }
 
-  // 🎤 Mute / Unmute
+  // Leave call
+  leaveCall() {
+    this.signalling.send({
+      type: 'LEAVE',
+      callId: 'call1',
+      from: this.role,
+      to: this.other
+    });
+
+    this.cleanupCall();
+  }
+
+  handleRemoteLeave() {
+    alert('Other user left the call');
+    this.cleanupCall();
+  }
+
+  cleanupCall() {
+    this.callState = 'ENDED';
+
+    this.cameraStream?.getTracks().forEach(t => t.stop());
+    this.webRtc.closeConnection();
+
+    this.localVideo.nativeElement.srcObject = null;
+    this.remoteVideo.nativeElement.srcObject = null;
+
+    clearInterval(this.statsInterval);
+  }
+
   toggleMute() {
     const sender = this.webRtc.pc.getSenders()
       .find(s => s.track?.kind === 'audio');
@@ -145,18 +199,13 @@ export class CallComponent implements OnInit, AfterViewInit, OnDestroy {
     }
   }
 
-  // 🎥 Camera On / Off
   toggleCamera() {
-    if (this.isScreenSharing) {
-      console.warn('Cannot toggle camera while screen sharing');
-      return;
-    }
+    if (this.isScreenSharing) return;
 
     this.cameraTrack.enabled = !this.cameraTrack.enabled;
     this.isCameraOff = !this.cameraTrack.enabled;
   }
 
-  // 🖥 Screen Share
   async toggleScreenShare() {
     const sender = this.webRtc.pc.getSenders()
       .find(s => s.track?.kind === 'video');
@@ -164,6 +213,7 @@ export class CallComponent implements OnInit, AfterViewInit, OnDestroy {
     if (!sender) return;
 
     if (!this.isScreenSharing) {
+
       const screenStream = await (navigator.mediaDevices as any).getDisplayMedia({
         video: true
       });
@@ -173,12 +223,9 @@ export class CallComponent implements OnInit, AfterViewInit, OnDestroy {
       await sender.replaceTrack(screenTrack);
       this.currentVideoTrack = screenTrack;
 
-      // Update local preview
       this.localVideo.nativeElement.srcObject = screenStream;
 
-      screenTrack.onended = () => {
-        this.stopScreenShare();
-      };
+      screenTrack.onended = () => this.stopScreenShare();
 
       this.isScreenSharing = true;
 
@@ -201,8 +248,56 @@ export class CallComponent implements OnInit, AfterViewInit, OnDestroy {
     this.isScreenSharing = false;
   }
 
+startStatsMonitoring() {
+
+  console.log("Starting stats monitoring...");
+
+  let lastSent = 0;
+  let lastReceived = 0;
+
+  this.statsInterval = setInterval(async () => {
+
+    const report = await this.webRtc.pc.getStats();
+
+    this.zone.run(() => {
+
+      report.forEach(stat => {
+
+        if (stat.type === 'candidate-pair' && stat.currentRoundTripTime) {
+          this.stats.rtt = Math.round(stat.currentRoundTripTime * 1000);
+        }
+
+        if (stat.type === 'outbound-rtp' && stat.kind === 'video') {
+          if (stat.bytesSent !== undefined) {
+            const bitrate = stat.bytesSent - lastSent;
+            this.stats.outgoingBitrate = Math.round(bitrate / 1024);
+            lastSent = stat.bytesSent;
+          }
+        }
+
+        if (stat.type === 'inbound-rtp' && stat.kind === 'video') {
+          if (stat.bytesReceived !== undefined) {
+            const bitrate = stat.bytesReceived - lastReceived;
+            this.stats.incomingBitrate = Math.round(bitrate / 1024);
+            lastReceived = stat.bytesReceived;
+          }
+        }
+
+        if (stat.type === 'local-candidate' && stat.candidateType) {
+          this.stats.candidateType = stat.candidateType;
+        }
+
+      });
+
+    });
+
+  }, 1000);
+}
+
+
   ngOnDestroy() {
-    this.cameraStream?.getTracks().forEach(t => t.stop());
-    this.webRtc.pc?.close();
+    this.signalingSub?.unsubscribe();
+    this.connectedSub?.unsubscribe();
+    this.cleanupCall();
   }
 }

@@ -1,6 +1,4 @@
-<div class="call-container">
-
-  <!-- Remote Fullscreen -->
+ <!-- Remote Fullscreen -->
   <video 
     #remoteVideo 
     id="remoteVideo"
@@ -42,4 +40,13 @@
     </button>
 
   </div>
+
+  <div class="call-container">
+
+  <div class="stats-panel" *ngIf="callState === 'CONNECTED'">
+  <div>ICE: {{ webRtc.pc.iceConnectionState }}</div>
+  <div>RTT: {{ stats.rtt }} ms</div>
+  <div>Outgoing KB: {{ stats.outgoingBitrate }}</div>
+  <div>Incoming KB: {{ stats.incomingBitrate }}</div>
+</div>
 </div>

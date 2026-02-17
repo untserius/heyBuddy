@@ -10,7 +10,7 @@ export class SignallingService {
 
     connect(userId: string) {
         this.socket = new WebSocket(
-            `wss://192.168.123.64:8443/ws/signaling?userId=${userId}`
+            `wss://192.168.123.199:8443/ws/signaling?userId=${userId}`
         );
 
         this.socket.onopen = () => {

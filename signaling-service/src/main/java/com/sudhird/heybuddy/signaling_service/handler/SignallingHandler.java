@@ -111,6 +111,4 @@ public class SignallingHandler extends TextWebSocketHandler {
                 .getQueryParams()
                 .getFirst("userId");
     }
-
-
 }
